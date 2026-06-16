@@ -16,6 +16,7 @@ interface ProviderOverride {
 
 interface PiExtensionAPI {
   registerProvider(provider: string, override: ProviderOverride): void;
+  registerCommand(name: string, options: { description?: string; handler: (args: string, ctx: { sendMessage(msg: string): Promise<unknown> }) => Promise<void> }): void;
 }
 
 export default function mmrProxyExtension(pi: PiExtensionAPI): void {
@@ -29,10 +30,26 @@ export default function mmrProxyExtension(pi: PiExtensionAPI): void {
     "kimi-coding": { env: "PI_KIMI_BASE_URL" },
   };
 
+  let applied = 0;
   for (const [provider, { env }] of Object.entries(overrides)) {
     const baseUrl = process.env[env];
     if (baseUrl) {
+      console.error(`[pi-fusion:proxy] ${provider} → ${baseUrl}`);
       pi.registerProvider(provider, { baseUrl });
+      applied++;
     }
   }
+  console.error(`[pi-fusion:proxy] loaded, ${applied} proxy override(s) applied`);
+
+  pi.registerCommand("/proxy-status", {
+    description: "Show current proxy overrides",
+    handler: async (_args: string, ctx: { sendMessage(msg: string): Promise<unknown> }) => {
+      const lines = ["## Proxy Overrides", ""];
+      for (const [provider, { env }] of Object.entries(overrides)) {
+        const val = process.env[env];
+        lines.push(`- **${provider}**: ${val ? `\`${val}\`` : "not set"}`);
+      }
+      await ctx.sendMessage(lines.join("\n"));
+    },
+  });
 }
