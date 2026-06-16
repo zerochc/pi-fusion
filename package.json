@@ -21,6 +21,7 @@
   },
   "pi": {
     "extensions": [
+      "./src/extensions/mmr-proxy/index.ts",
       "./src/extensions/mmr-moa/index.ts",
       "./src/extensions/mmr-workflow/index.ts"
     ]
