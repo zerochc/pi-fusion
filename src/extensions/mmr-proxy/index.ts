@@ -26,6 +26,7 @@ export default function mmrProxyExtension(pi: PiExtensionAPI): void {
     anthropic: { env: "PI_ANTHROPIC_BASE_URL" },
     minimax: { env: "PI_MINIMAX_BASE_URL" },
     groq: { env: "PI_GROQ_BASE_URL" },
+    "kimi-coding": { env: "PI_KIMI_BASE_URL" },
   };
 
   for (const [provider, { env }] of Object.entries(overrides)) {

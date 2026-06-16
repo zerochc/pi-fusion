@@ -21,11 +21,15 @@ panelists:
     model: gemini-3.1-pro
     thinking: high
 
-  # Optional third panelist — uncomment to enable
+  # Optional panelists — uncomment to enable
   # - role: supplementary
   #   provider: minimax
   #   model: minimax-m3
   #   thinking: medium
+  # - role: coding
+  #   provider: kimi-coding
+  #   model: kimi-for-coding
+  #   thinking: high
 
 # ─── Synthesizer ──────────────────────────────────────────────────────────────
 # Reads all panelist responses and produces the final answer.
