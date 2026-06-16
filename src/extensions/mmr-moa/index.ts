@@ -1,130 +1,108 @@
 /**
  * mmr-moa: MoA (Mixture of Agents) Fusion Extension for Pi
  *
- * Provides the /moa command that fans out a question to multiple
- * LLM panelists in parallel, then synthesizes their responses.
- *
- * Usage:
- *   /moa <question>              Run MoA with default config
- *   /moa-config                  Show current MoA configuration
- *   /moa-reload                  Reload MoA config from disk
+ * Provides /moa, /moa-config, /moa-reload commands.
+ * Registered as a pi extension via default export factory.
  */
 
-import type { LlmCallFn } from "../../core/moa-engine.js";
-import { runMoa } from "../../core/moa-engine.js";
 import { loadMoaConfig } from "../../core/config.js";
-import type { MoaConfig, PanelistResult } from "../../types.js";
+import type { MoaConfig } from "../../types.js";
 
-// ─── Pi Extension Interface ───────────────────────────────────────────────────
-// This is the expected interface from pi's extension API.
-// Actual types are from @earendil-works/pi-agent-core
+// ─── Pi ExtensionAPI types (subset of actual API) ────────────────────────────
 
-interface PiExtensionContext {
-  registerCommand(command: {
-    name: string;
-    description: string;
-    handler: (args: string) => Promise<string>;
-  }): void;
-  /** Access to pi's LLM calling capability */
-  llm?: {
-    call(params: {
-      provider: string;
-      model: string;
-      thinking: string;
-      systemPrompt: string;
-      userMessage: string;
-      signal?: AbortSignal;
-    }): Promise<string>;
-  };
-  /** Write output to the pi session */
-  print(message: string): void;
+interface PiCommandContext {
+  sendMessage<T = unknown>(
+    message: string,
+    options?: { role?: "user"; includeInHistory?: boolean; metadata?: T }
+  ): Promise<{ id: string }>;
+}
+
+interface CommandOptions {
+  description?: string;
+  handler: (args: string, ctx: PiCommandContext) => Promise<void>;
+}
+
+interface PiExtensionAPI {
+  registerCommand(name: string, options: CommandOptions): void;
 }
 
 // ─── State ───────────────────────────────────────────────────────────────────
 
 let moaConfig: MoaConfig = loadMoaConfig();
 
-// ─── Activation ──────────────────────────────────────────────────────────────
+// ─── Extension Factory ───────────────────────────────────────────────────────
 
-export function activate(ctx: PiExtensionContext): void {
-  // /moa command
-  ctx.registerCommand({
-    name: "/moa",
+export default function mmrMoaExtension(pi: PiExtensionAPI): void {
+  pi.registerCommand("/moa", {
     description:
-      "Multi-model MoA fusion — sends your question to multiple LLMs in parallel and synthesizes the best answer",
-    handler: async (args: string) => {
+      "Multi-model MoA fusion — send your question to multiple LLMs in parallel, get a synthesized answer",
+    handler: async (args: string, ctx: PiCommandContext) => {
       const question = args.trim();
-      if (!question) return "Usage: /moa <your question>";
-
-      // Build LLM callback using pi's native API
-      const llmCall: LlmCallFn = async (params) => {
-        if (ctx.llm?.call) {
-          return ctx.llm.call(params);
-        }
-        throw new Error("LLM call not available in this pi context");
-      };
-
-      ctx.print(`\n🎯 MoA Fusion — ${moaConfig.panelists.length} panelists\n`);
-
-      try {
-        const result = await runMoa({
-          config: moaConfig,
-          llmCall,
-          question,
-          onPanelistComplete: (pr: PanelistResult) => {
-            const status = pr.error ? "❌" : "✅";
-            const dur = (pr.durationMs / 1000).toFixed(1);
-            ctx.print(`  ${status} ${pr.role} (${pr.provider}/${pr.model}) — ${dur}s`);
-          },
-        });
-
-        ctx.print(`\n✨ Synthesized by ${moaConfig.synthesizer.provider}/${moaConfig.synthesizer.model}\n`);
-        return result.synthesis;
-      } catch (err) {
-        return `MoA failed: ${err instanceof Error ? err.message : "Unknown error"}`;
+      if (!question) {
+        await ctx.sendMessage(
+          "/moa requires a question. Example: /moa What architecture should I use for this API?"
+        );
+        return;
       }
+
+      const panelistList = moaConfig.panelists
+        .map(
+          (p) =>
+            `- **${p.role}**: \`${p.provider}/${p.model}\` (thinking: ${p.thinking})`
+        )
+        .join("\n");
+
+      const prompt = [
+        "**MoA Fusion Analysis Request**",
+        "",
+        `**Question**: ${question}`,
+        "",
+        "**Panelists** (will be called in parallel):",
+        panelistList,
+        "",
+        `**Synthesizer**: \`${moaConfig.synthesizer.provider}/${moaConfig.synthesizer.model}\``,
+        "",
+        "Please use pi-mmr background tasks to:",
+        "1. Send the question to each panelist model in parallel",
+        "2. Collect all responses",
+        "3. Feed them to the synthesizer model for final aggregation",
+        "4. Present the synthesized answer",
+        "",
+        "Use `background: true` on Task calls with different `model` settings per call.",
+      ].join("\n");
+
+      await ctx.sendMessage(prompt);
     },
   });
 
-  // /moa-config command
-  ctx.registerCommand({
-    name: "/moa-config",
-    description: "Show current MoA configuration",
-    handler: async () => {
+  pi.registerCommand("/moa-config", {
+    description: "Show current MoA panelist and synthesizer configuration",
+    handler: async (_args: string, ctx: PiCommandContext) => {
       const lines = [
         "## MoA Configuration",
         "",
-        "### Panelists",
+        "**Panelists:**",
         ...moaConfig.panelists.map(
-          (p) => `- ${p.role}: ${p.provider}/${p.model} (thinking: ${p.thinking})`
+          (p) =>
+            `- \`${p.role}\`: ${p.provider}/${p.model} (thinking: ${p.thinking})`
         ),
         "",
-        "### Synthesizer",
-        `- ${moaConfig.synthesizer.provider}/${moaConfig.synthesizer.model} (thinking: ${moaConfig.synthesizer.thinking})`,
+        `**Synthesizer:** ${moaConfig.synthesizer.provider}/${moaConfig.synthesizer.model} (thinking: ${moaConfig.synthesizer.thinking})`,
         "",
-        "### Strategy",
-        `- Mode: ${moaConfig.strategy.mode}`,
-        `- Timeout: ${moaConfig.strategy.timeoutSeconds}s`,
-        `- Max panelists: ${moaConfig.strategy.maxPanelists}`,
+        `**Strategy:** ${moaConfig.strategy.mode} | timeout: ${moaConfig.strategy.timeoutSeconds}s | max panelists: ${moaConfig.strategy.maxPanelists}`,
+        "",
+        `Config: ~/.pi/moa/config.yaml — edit and /moa-reload to apply.`,
       ];
-      return lines.join("\n");
+      await ctx.sendMessage(lines.join("\n"));
     },
   });
 
-  // /moa-reload command
-  ctx.registerCommand({
-    name: "/moa-reload",
+  pi.registerCommand("/moa-reload", {
     description: "Reload MoA configuration from ~/.pi/moa/config.yaml",
-    handler: async () => {
+    handler: async (_args: string, ctx: PiCommandContext) => {
       moaConfig = loadMoaConfig();
-      return `MoA config reloaded. ${moaConfig.panelists.length} panelists, synthesizer: ${moaConfig.synthesizer.provider}/${moaConfig.synthesizer.model}`;
+      const msg = `MoA config reloaded. ${moaConfig.panelists.length} panelist(s), synthesizer: ${moaConfig.synthesizer.provider}/${moaConfig.synthesizer.model}`;
+      await ctx.sendMessage(msg);
     },
   });
 }
-
-// ─── Pi Package Manifest Export ──────────────────────────────────────────────
-
-// Pi extensions export a default object with the activate function.
-// When installed as a pi package, pi calls activate() at startup.
-const extension = { activate };
-export default extension;

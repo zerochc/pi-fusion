@@ -8,19 +8,26 @@
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
-      "import": "./dist/index.js"
+      "import": "./src/index.ts"
     },
     "./extensions/mmr-moa": {
       "types": "./dist/extensions/mmr-moa/index.d.ts",
-      "import": "./dist/extensions/mmr-moa/index.js"
+      "import": "./src/extensions/mmr-moa/index.ts"
     },
     "./extensions/mmr-workflow": {
       "types": "./dist/extensions/mmr-workflow/index.d.ts",
-      "import": "./dist/extensions/mmr-workflow/index.js"
+      "import": "./src/extensions/mmr-workflow/index.ts"
     }
+  },
+  "pi": {
+    "extensions": [
+      "./src/extensions/mmr-moa/index.ts",
+      "./src/extensions/mmr-workflow/index.ts"
+    ]
   },
   "files": [
     "dist",
+    "src",
     "config-examples"
   ],
   "scripts": {

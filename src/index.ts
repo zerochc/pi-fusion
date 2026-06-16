@@ -6,10 +6,10 @@
  * @packageDocumentation
  */
 
-// ─── Extensions ──────────────────────────────────────────────────────────────
+// ─── Extensions (pi default export factories) ───────────────────────────────
 
-export { activate as activateMoa } from "./extensions/mmr-moa/index.js";
-export { activate as activateWorkflow } from "./extensions/mmr-workflow/index.js";
+export { default as mmrMoaExtension } from "./extensions/mmr-moa/index.js";
+export { default as mmrWorkflowExtension } from "./extensions/mmr-workflow/index.js";
 
 // ─── Core Engines ────────────────────────────────────────────────────────────
 

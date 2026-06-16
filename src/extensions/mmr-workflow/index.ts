@@ -1,83 +1,74 @@
 /**
  * mmr-workflow: Multi-stage Workflow Extension for Pi
  *
- * Provides /workflow and /workflows commands for executing
- * multi-model, multi-stage development pipelines.
- *
- * Usage:
- *   /workflows                    List available workflows
- *   /workflow <name> <input>      Execute a workflow
- *   /workflow-validate <name>     Validate a workflow definition
+ * Provides /workflows, /workflow, /workflow-validate commands.
+ * Registered as a pi extension via default export factory.
  */
 
-import type { LlmCallFn } from "../../core/moa-engine.js";
-import { runWorkflow, formatWorkflowSummary, getFinalOutput } from "../../core/workflow-engine.js";
-import {
-  loadWorkflow,
-  listWorkflows,
-  validateWorkflow,
-} from "../../core/config.js";
-import type { StageResult } from "../../types.js";
+import { loadWorkflow, listWorkflows, validateWorkflow } from "../../core/config.js";
 
-// ─── Pi Extension Interface ───────────────────────────────────────────────────
+// ─── Pi ExtensionAPI types (subset of actual API) ────────────────────────────
 
-interface PiExtensionContext {
-  registerCommand(command: {
-    name: string;
-    description: string;
-    handler: (args: string) => Promise<string>;
-  }): void;
-  llm?: {
-    call(params: {
-      provider: string;
-      model: string;
-      thinking: string;
-      systemPrompt: string;
-      userMessage: string;
-      signal?: AbortSignal;
-    }): Promise<string>;
-  };
-  print(message: string): void;
+interface PiCommandContext {
+  sendMessage<T = unknown>(
+    message: string,
+    options?: { role?: "user"; includeInHistory?: boolean; metadata?: T }
+  ): Promise<{ id: string }>;
 }
 
-// ─── Activation ──────────────────────────────────────────────────────────────
+interface CommandOptions {
+  description?: string;
+  handler: (args: string, ctx: PiCommandContext) => Promise<void>;
+}
 
-export function activate(ctx: PiExtensionContext): void {
-  // /workflows command — list available workflows
-  ctx.registerCommand({
-    name: "/workflows",
+interface PiExtensionAPI {
+  registerCommand(name: string, options: CommandOptions): void;
+}
+
+// ─── Extension Factory ───────────────────────────────────────────────────────
+
+export default function mmrWorkflowExtension(pi: PiExtensionAPI): void {
+  pi.registerCommand("/workflows", {
     description: "List available workflow definitions",
-    handler: async () => {
+    handler: async (_args: string, ctx: PiCommandContext) => {
       const workflows = listWorkflows();
       if (workflows.length === 0) {
-        return "No workflows found. Add .workflow.md files to ~/.pi/workflows/";
+        await ctx.sendMessage(
+          "No workflows found. Add .workflow.md files to ~/.pi/workflows/"
+        );
+        return;
       }
-      const lines = ["## Available Workflows", ""];
-      for (const wf of workflows) {
-        lines.push(`- **${wf.name}**: ${wf.description}`);
-      }
-      lines.push("", "Use `/workflow <name> <input>` to execute.");
-      return lines.join("\n");
+      const lines = [
+        "## Available Workflows",
+        "",
+        ...workflows.map(
+          (w) => `- **${w.name}**: ${w.description}`
+        ),
+        "",
+        'Use `/workflow <name> <input>` to execute. Example: `/workflow feature-dev "Implement JWT authentication"`',
+      ];
+      await ctx.sendMessage(lines.join("\n"));
     },
   });
 
-  // /workflow command — execute a workflow
-  ctx.registerCommand({
-    name: "/workflow",
+  pi.registerCommand("/workflow", {
     description:
       "Execute a multi-stage workflow with different models per stage",
-    handler: async (args: string) => {
+    handler: async (args: string, ctx: PiCommandContext) => {
       const parts = args.trim().split(/\s+/);
       if (parts.length < 2) {
-        return [
-          "Usage: /workflow <name> <input>",
-          "",
-          "Examples:",
-          "  /workflow feature-dev \"Implement JWT authentication\"",
-          "  /workflow bug-hunt \"Orders stuck in PAYING status\"",
-          "",
-          "Use /workflows to list available workflows.",
-        ].join("\n");
+        await ctx.sendMessage(
+          [
+            'Usage: `/workflow <name> <input>`\n',
+            "Examples:",
+            '  `/workflow feature-dev "Implement JWT authentication"`',
+            '  `/workflow bug-hunt "Orders stuck in PAYING status"`',
+            '  `/workflow code-review "Review the auth module"`',
+            "",
+            "Use `/workflows` to list available workflows.",
+          ].join("\n")
+        );
+        return;
       }
 
       const workflowName = parts[0];
@@ -88,69 +79,73 @@ export function activate(ctx: PiExtensionContext): void {
         const available = listWorkflows()
           .map((w) => w.name)
           .join(", ");
-        return `Workflow "${workflowName}" not found. Available: ${available || "none"}`;
+        await ctx.sendMessage(
+          `Workflow "${workflowName}" not found. Available: ${available || "none"}`
+        );
+        return;
       }
 
-      // Validate
       const errors = validateWorkflow(workflow);
       if (errors.length > 0) {
-        return `Workflow validation failed:\n${errors.map((e) => `  - ${e}`).join("\n")}`;
+        await ctx.sendMessage(
+          `Workflow "${workflowName}" has validation errors:\n${errors.map((e) => `  - ${e}`).join("\n")}`
+        );
+        return;
       }
 
-      // Build LLM callback
-      const llmCall: LlmCallFn = async (params) => {
-        if (ctx.llm?.call) {
-          return ctx.llm.call(params);
-        }
-        throw new Error("LLM call not available in this pi context");
-      };
+      // Build stage summary
+      const stageList = workflow.stages
+        .map((s) => {
+          const deps = s.dependsOn.length > 0 ? ` (depends: ${s.dependsOn.join(", ")})` : "";
+          return `- **${s.id}**: ${s.provider}/${s.model} (thinking: ${s.thinking})${deps}`;
+        })
+        .join("\n");
 
-      ctx.print(`\n🔄 Workflow: ${workflow.name} (${workflow.stages.length} stages)\n`);
+      const prompt = [
+        `**Workflow: ${workflow.name}** — ${workflow.description}`,
+        "",
+        `**Input**: ${input}`,
+        "",
+        "**Stages** (executed in dependency order):",
+        stageList,
+        "",
+        "Execute each stage sequentially using pi-mmr Task subagents:",
+        "1. For each stage, create a Task with the specified provider/model/thinking settings",
+        "2. Pass outputs from dependency stages as context",
+        "3. After all stages complete, present a summary",
+        "",
+        "Use the exact stage prompts and tool allowlists defined in the workflow spec.",
+      ].join("\n");
 
-      try {
-        const result = await runWorkflow({
-          workflow,
-          input,
-          llmCall,
-          onStageStart: (stageId: string) => {
-            ctx.print(`  ⏳ Stage: ${stageId}...`);
-          },
-          onStageComplete: (sr: StageResult) => {
-            const status = sr.error ? "❌" : "✅";
-            const dur = (sr.durationMs / 1000).toFixed(1);
-            ctx.print(`  ${status} Stage: ${sr.stageId} (${sr.provider}/${sr.model}) — ${dur}s`);
-          },
-        });
-
-        ctx.print(`\n✨ Workflow complete — ${(result.totalDurationMs / 1000).toFixed(1)}s total\n`);
-        return formatWorkflowSummary(result);
-      } catch (err) {
-        return `Workflow failed: ${err instanceof Error ? err.message : "Unknown error"}`;
-      }
+      await ctx.sendMessage(prompt);
     },
   });
 
-  // /workflow-validate command — validate a workflow definition
-  ctx.registerCommand({
-    name: "/workflow-validate",
+  pi.registerCommand("/workflow-validate", {
     description: "Validate a workflow definition",
-    handler: async (args: string) => {
+    handler: async (args: string, ctx: PiCommandContext) => {
       const name = args.trim();
-      if (!name) return "Usage: /workflow-validate <name>";
+      if (!name) {
+        await ctx.sendMessage("Usage: /workflow-validate <name>");
+        return;
+      }
 
       const workflow = loadWorkflow(name);
-      if (!workflow) return `Workflow "${name}" not found.`;
+      if (!workflow) {
+        await ctx.sendMessage(`Workflow "${name}" not found in ~/.pi/workflows/`);
+        return;
+      }
 
       const errors = validateWorkflow(workflow);
       if (errors.length === 0) {
-        return `Workflow "${name}" is valid. ${workflow.stages.length} stages, ${workflow.stages.reduce((sum, s) => sum + s.dependsOn.length, 0)} dependencies.`;
+        await ctx.sendMessage(
+          `✅ Workflow "${name}" is valid. ${workflow.stages.length} stage(s), ${workflow.stages.reduce((sum, s) => sum + s.dependsOn.length, 0)} dependencies.`
+        );
+      } else {
+        await ctx.sendMessage(
+          `❌ Validation errors:\n${errors.map((e) => `  - ${e}`).join("\n")}`
+        );
       }
-      return `Validation errors:\n${errors.map((e) => `  - ${e}`).join("\n")}`;
     },
   });
 }
-
-// ─── Pi Package Manifest Export ──────────────────────────────────────────────
-
-const extension = { activate };
-export default extension;
