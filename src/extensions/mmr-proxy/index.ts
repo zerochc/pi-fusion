@@ -16,7 +16,8 @@ interface ProviderOverride {
 
 interface PiExtensionAPI {
   registerProvider(provider: string, override: ProviderOverride): void;
-  registerCommand(name: string, options: { description?: string; handler: (args: string, ctx: { sendMessage(msg: string): Promise<unknown> }) => Promise<void> }): void;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  registerCommand(name: string, options: { description?: string; handler: (args: string, ctx: any) => Promise<void> }): void;
 }
 
 export default function mmrProxyExtension(pi: PiExtensionAPI): void {
@@ -42,14 +43,14 @@ export default function mmrProxyExtension(pi: PiExtensionAPI): void {
   console.error(`[pi-fusion:proxy] loaded, ${applied} proxy override(s) applied`);
 
   pi.registerCommand("/proxy-status", {
-    description: "Show current proxy overrides",
-    handler: async (_args: string, ctx: { sendMessage(msg: string): Promise<unknown> }) => {
-      const lines = ["## Proxy Overrides", ""];
+    description: "Print current proxy overrides (check terminal)",
+    handler: async () => {
+      console.error("\n── Proxy Overrides ──");
       for (const [provider, { env }] of Object.entries(overrides)) {
         const val = process.env[env];
-        lines.push(`- **${provider}**: ${val ? `\`${val}\`` : "not set"}`);
+        console.error(`  ${provider}: ${val || "(not set)"}`);
       }
-      await ctx.sendMessage(lines.join("\n"));
+      console.error("──\n");
     },
   });
 }
