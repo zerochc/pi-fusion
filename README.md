@@ -1,5 +1,7 @@
 # pi-fusion
 
+[中文](./README_CN.md)
+
 > Multi-model MoA fusion and workflow orchestration for the [Pi coding agent](https://github.com/earendil-works/pi).
 
 **pi-fusion** adds two capabilities to Pi:
