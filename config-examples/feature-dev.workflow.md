@@ -25,7 +25,7 @@ stages:
   - id: implement
     provider: kimi-coding
     model: kimi-for-coding
-    thinking: high
+    thinking: xhigh
     tools: [read, write, edit, bash, grep, find, ls]
     depends_on: [plan]
     prompt: |
@@ -40,7 +40,7 @@ stages:
   - id: review
     provider: minimax
     model: MiniMax-M3
-    thinking: high
+    thinking: xhigh
     tools: [read, grep, find, ls]
     depends_on: [implement]
     prompt: |
@@ -59,7 +59,7 @@ stages:
   - id: fix
     provider: kimi-coding
     model: kimi-for-coding
-    thinking: high
+    thinking: xhigh
     tools: [read, write, edit, bash]
     depends_on: [review]
     prompt: |
@@ -74,7 +74,7 @@ stages:
   - id: test
     provider: minimax
     model: MiniMax-M3
-    thinking: low
+    thinking: high
     tools: [read, write, edit, bash, grep, find, ls]
     depends_on: [fix]
     prompt: |

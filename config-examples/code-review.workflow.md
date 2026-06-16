@@ -25,7 +25,7 @@ stages:
   - id: quality
     provider: kimi-coding
     model: kimi-for-coding
-    thinking: high
+    thinking: xhigh
     tools: [read, grep, find]
     prompt: |
       Review the code for QUALITY issues.
@@ -42,7 +42,7 @@ stages:
   - id: aggregate
     provider: minimax
     model: MiniMax-M3
-    thinking: high
+    thinking: xhigh
     tools: []
     depends_on: [security, quality]
     prompt: |

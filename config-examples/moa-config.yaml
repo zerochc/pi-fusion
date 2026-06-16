@@ -10,12 +10,12 @@ panelists:
   - role: coding
     provider: kimi-coding
     model: kimi-for-coding
-    thinking: high
+    thinking: xhigh
 
 synthesizer:
   provider: deepseek
   model: deepseek-v4-pro
-  thinking: high
+  thinking: xhigh
   systemPrompt: |
     You are a synthesizer. You will receive responses from multiple AI models analyzing the same problem.
     Identify agreements and disagreements, select the best reasoning, and produce a single coherent answer.

@@ -40,7 +40,7 @@ stages:
   - id: fix
     provider: kimi-coding
     model: kimi-for-coding
-    thinking: high
+    thinking: xhigh
     tools: [read, write, edit, bash]
     depends_on: [root-cause]
     prompt: |
@@ -55,7 +55,7 @@ stages:
   - id: verify
     provider: minimax
     model: MiniMax-M3
-    thinking: low
+    thinking: high
     tools: [read, bash, grep]
     depends_on: [fix]
     prompt: |

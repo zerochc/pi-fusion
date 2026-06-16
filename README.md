@@ -11,16 +11,47 @@
 
 ---
 
-## Why
+## Why pi-fusion
 
-Pi is a single-model coding agent — great for simplicity, but limited to one model's perspective per turn. pi-mmr adds multi-model routing but still uses one model at a time.
+### The Problem
 
-pi-fusion adds two complementary patterns:
+Every LLM has blind spots. A single model — no matter how powerful — is limited by its training data, architecture, and reasoning biases:
 
-| Pattern | What it does | Best for |
-|---------|-------------|----------|
-| **MoA** | N models answer the SAME question → synthesizer picks the best | Architecture decisions, bug root cause, code review |
-| **Workflow** | N models handle DIFFERENT stages → pipeline chains them | Full feature dev, bug fixing, multi-perspective review |
+- **DeepSeek V4** excels at deep reasoning but may miss Western coding idioms
+- **Kimi-for-coding** is coding-optimized but less thorough on architecture design
+- **MiniMax M3** catches edge cases others miss but isn't the fastest coder
+
+You could manually ask each model and compare answers. But that's slow, tedious, and you never know if combining perspectives would have yielded a better result.
+
+### What pi-fusion Does
+
+pi-fusion brings two battle-tested multi-model patterns to your terminal:
+
+| Pattern | How it works | Real example |
+|---------|-------------|-------------|
+| **MoA Fusion** `/moa` | DeepSeek + Kimi analyze the same problem in parallel → DeepSeek synthesizes the best answer | *"Is this microservice boundary right?"* — gets a reasoning view + a coding reality check, merged into one answer |
+| **Workflow Pipeline** `/workflow` | Each stage runs with the model best suited for it | *feature-dev*: DeepSeek plans → Kimi codes → MiniMax reviews → Kimi fixes → MiniMax tests |
+
+### vs Alternatives
+
+| | pi-fusion | Bare Pi | pi-mmr | OpenRouter Fusion |
+|---|---|---|---|---|
+| **Multi-model** | ✅ 2+ models collaborate | ❌ single model | ⚠️ one at a time | ✅ cloud fusion |
+| **Offline config** | ✅ YAML + Markdown | — | ✅ JSON | ❌ web UI only |
+| **Your API keys** | ✅ no markup | ✅ | ✅ | ❌ platform fee |
+| **Coding-optimized** | ✅ purpose-built | ✅ | ✅ | ❌ general purpose |
+| **Model diversity** | ✅ DeepSeek/Kimi/MiniMax | ❌ | ⚠️ | fixed providers |
+| **Workflow pipelines** | ✅ DAG orchestration | ❌ | ⚠️ subagents only | ❌ |
+| **Zero fork** | ✅ pure extension | — | ✅ | — |
+
+### Key Advantages
+
+1. **No single model bottleneck** — Different models see different problems. MoA surfaces all perspectives.
+2. **Right model for the right job** — DeepSeek for reasoning, Kimi for coding, MiniMax for review. No model is great at everything.
+3. **Config-driven, not code-driven** — Change panelists, models, or pipeline stages by editing YAML/Markdown. No redeploy.
+4. **Composes with pi-mmr** — pi-fusion is a pi extension that works alongside pi-mmr. Use pi-mmr for model routing, pi-fusion for model collaboration.
+5. **Chinese model optimized** — First-class support for DeepSeek, Kimi, MiniMax. Tuned configurations for the domestic model ecosystem.
+6. **Framework-agnostic core** — The MoA and Workflow engines don't depend on pi internals. They take LLM callbacks. Testable, portable.
 
 ---
 
