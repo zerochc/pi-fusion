@@ -1,20 +1,17 @@
 ---
 type: workflow
 name: code-review
-description: Deep multi-model code review with different perspectives
+description: Security (DeepSeek) + Quality (Kimi) + Aggregation (MiniMax)
 version: "1.0"
 
 stages:
-  - id: security-review
+  - id: security
     provider: deepseek
     model: deepseek-v4-pro
     thinking: xhigh
-    tools:
-      - read
-      - grep
-      - find
+    tools: [read, grep, find]
     prompt: |
-      Review the code for SECURITY issues only.
+      Review the code for SECURITY issues.
 
       ## Check for
       - Injection vulnerabilities (SQL, command, etc.)
@@ -25,57 +22,31 @@ stages:
 
       Output findings organized by severity.
 
-  - id: performance-review
-    provider: google
-    model: gemini-3.1-pro
+  - id: quality
+    provider: kimi-coding
+    model: kimi-for-coding
     thinking: high
-    tools:
-      - read
-      - grep
-      - find
+    tools: [read, grep, find]
     prompt: |
-      Review the code for PERFORMANCE issues only.
+      Review the code for QUALITY issues.
 
       ## Check for
       - N+1 queries or unnecessary loops
       - Missing caching opportunities
-      - Memory leaks or excessive allocations
-      - Blocking operations that could be async
-      - Inefficient data structures
-
-      Output findings organized by impact.
-
-  - id: design-review
-    provider: deepseek
-    model: deepseek-v4-pro
-    thinking: xhigh
-    tools:
-      - read
-      - grep
-      - find
-    prompt: |
-      Review the code for DESIGN quality.
-
-      ## Check for
       - SOLID principles violations
       - Tight coupling or missing abstractions
-      - Over-engineering or under-engineering
       - Naming clarity and consistency
-      - Testability
 
       Output findings with suggested improvements.
 
   - id: aggregate
-    provider: google
-    model: gemini-3.1-pro
+    provider: minimax
+    model: MiniMax-M3
     thinking: high
     tools: []
-    depends_on:
-      - security-review
-      - performance-review
-      - design-review
+    depends_on: [security, quality]
     prompt: |
-      Aggregate the three review perspectives above into one comprehensive review report.
+      Aggregate the two review perspectives into one comprehensive report.
 
       ## Format
       1. **Executive Summary** — one paragraph overview

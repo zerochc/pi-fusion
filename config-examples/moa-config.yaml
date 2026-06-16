@@ -1,9 +1,5 @@
 # MoA (Mixture of Agents) Configuration
-# 
-# Place this file at: ~/.pi/moa/config.yaml
-# Or set MOA_CONFIG_PATH env var to an alternative location.
-
-# ─── Panelists ────────────────────────────────────────────────────────────────
+# Place at: ~/.pi/moa/config.yaml
 
 panelists:
   - role: reasoning
@@ -16,29 +12,15 @@ panelists:
     model: kimi-for-coding
     thinking: high
 
-  - role: supplementary
-    provider: minimax
-    model: MiniMax-M3
-    thinking: high
-
-# ─── Synthesizer ──────────────────────────────────────────────────────────────
-
 synthesizer:
   provider: deepseek
   model: deepseek-v4-pro
   thinking: high
   systemPrompt: |
     You are a synthesizer. You will receive responses from multiple AI models analyzing the same problem.
-    
-    Your job:
-    1. Identify where models agree and disagree
-    2. Select the best reasoning from each perspective
-    3. Produce a single, coherent final answer
-    4. If models disagree, explain the trade-offs and make a clear recommendation
-
-# ─── Strategy ─────────────────────────────────────────────────────────────────
+    Identify agreements and disagreements, select the best reasoning, and produce a single coherent answer.
 
 strategy:
   mode: parallel
   timeout_seconds: 120
-  max_panelists: 3
+  max_panelists: 2
