@@ -1,73 +1,51 @@
 /**
  * mmr-workflow: Multi-stage Workflow Extension for Pi
- *
- * Provides /workflows, /workflow, /workflow-validate commands.
- * Registered as a pi extension via default export factory.
  */
 
 import { loadWorkflow, listWorkflows, validateWorkflow } from "../../core/config.js";
 
-// ─── Pi ExtensionAPI types (subset of actual API) ────────────────────────────
+// ─── Minimal Pi types ────────────────────────────────────────────────────────
 
-interface PiCommandContext {
-  sendMessage<T = unknown>(
-    message: string,
-    options?: { role?: "user"; includeInHistory?: boolean; metadata?: T }
-  ): Promise<{ id: string }>;
-}
-
-interface CommandOptions {
-  description?: string;
-  handler: (args: string, ctx: PiCommandContext) => Promise<void>;
-}
-
-interface PiExtensionAPI {
-  registerCommand(name: string, options: CommandOptions): void;
+interface PiAPI {
+  registerCommand(name: string, options: { description?: string; handler: (args: string) => Promise<void> }): void;
+  sendUserMessage(content: string, options?: { deliverAs?: "steer" | "followUp" }): void;
 }
 
 // ─── Extension Factory ───────────────────────────────────────────────────────
 
-export default function mmrWorkflowExtension(pi: PiExtensionAPI): void {
+export default function mmrWorkflowExtension(pi: PiAPI): void {
   pi.registerCommand("/workflows", {
     description: "List available workflow definitions",
-    handler: async (_args: string, ctx: PiCommandContext) => {
+    handler: async () => {
       const workflows = listWorkflows();
       if (workflows.length === 0) {
-        await ctx.sendMessage(
-          "No workflows found. Add .workflow.md files to ~/.pi/workflows/"
-        );
+        pi.sendUserMessage("No workflows found. Add .workflow.md files to ~/.pi/workflows/");
         return;
       }
-      const lines = [
+      pi.sendUserMessage([
         "## Available Workflows",
         "",
-        ...workflows.map(
-          (w) => `- **${w.name}**: ${w.description}`
-        ),
+        ...workflows.map((w) => `- **${w.name}**: ${w.description}`),
         "",
-        'Use `/workflow <name> <input>` to execute. Example: `/workflow feature-dev "Implement JWT authentication"`',
-      ];
-      await ctx.sendMessage(lines.join("\n"));
+        'Use `/workflow <name> <input>` to execute.',
+      ].join("\n"));
     },
   });
 
   pi.registerCommand("/workflow", {
-    description:
-      "Execute a multi-stage workflow with different models per stage",
-    handler: async (args: string, ctx: PiCommandContext) => {
+    description: "Execute a multi-stage workflow with different models per stage",
+    handler: async (args: string) => {
       const parts = args.trim().split(/\s+/);
       if (parts.length < 2) {
-        await ctx.sendMessage(
-          [
-            'Usage: `/workflow <name> <input>`\n',
-            "Examples:",
-            '  `/workflow feature-dev "Implement JWT authentication"`',
-            '  `/workflow bug-hunt "Orders stuck in PAYING status"`',
-            '  `/workflow code-review "Review the auth module"`',
-            "",
-            "Use `/workflows` to list available workflows.",
-          ].join("\n")
-        );
+        pi.sendUserMessage([
+          "Usage: `/workflow <name> <input>`",
+          "",
+          "Examples:",
+          '  `/workflow feature-dev "Implement JWT auth"`',
+          '  `/workflow bug-hunt "Orders stuck in PAYING"`',
+          "",
+          "Use `/workflows` to list available workflows.",
+        ].join("\n"));
         return;
       }
 
@@ -76,75 +54,47 @@ export default function mmrWorkflowExtension(pi: PiExtensionAPI): void {
 
       const workflow = loadWorkflow(workflowName);
       if (!workflow) {
-        const available = listWorkflows()
-          .map((w) => w.name)
-          .join(", ");
-        await ctx.sendMessage(
-          `Workflow "${workflowName}" not found. Available: ${available || "none"}`
-        );
+        const available = listWorkflows().map((w) => w.name).join(", ");
+        pi.sendUserMessage(`Workflow "${workflowName}" not found. Available: ${available || "none"}`);
         return;
       }
 
       const errors = validateWorkflow(workflow);
       if (errors.length > 0) {
-        await ctx.sendMessage(
-          `Workflow "${workflowName}" has validation errors:\n${errors.map((e) => `  - ${e}`).join("\n")}`
-        );
+        pi.sendUserMessage(`Workflow "${workflowName}" validation errors:\n${errors.map((e) => `  - ${e}`).join("\n")}`);
         return;
       }
 
-      // Build stage summary
-      const stageList = workflow.stages
-        .map((s) => {
-          const deps = s.dependsOn.length > 0 ? ` (depends: ${s.dependsOn.join(", ")})` : "";
-          return `- **${s.id}**: ${s.provider}/${s.model} (thinking: ${s.thinking})${deps}`;
-        })
-        .join("\n");
+      const stageList = workflow.stages.map((s) => {
+        const deps = s.dependsOn.length > 0 ? ` (depends: ${s.dependsOn.join(", ")})` : "";
+        return `- **${s.id}**: ${s.provider}/${s.model} (${s.thinking})${deps}`;
+      }).join("\n");
 
-      const prompt = [
+      pi.sendUserMessage([
         `**Workflow: ${workflow.name}** — ${workflow.description}`,
         "",
         `**Input**: ${input}`,
         "",
-        "**Stages** (executed in dependency order):",
+        "**Stages**:",
         stageList,
         "",
-        "Execute each stage sequentially using pi-mmr Task subagents:",
-        "1. For each stage, create a Task with the specified provider/model/thinking settings",
-        "2. Pass outputs from dependency stages as context",
-        "3. After all stages complete, present a summary",
-        "",
-        "Use the exact stage prompts and tool allowlists defined in the workflow spec.",
-      ].join("\n");
-
-      await ctx.sendMessage(prompt);
+        "Execute each stage sequentially using pi-mmr Task subagents with the specified model settings.",
+      ].join("\n"));
     },
   });
 
   pi.registerCommand("/workflow-validate", {
     description: "Validate a workflow definition",
-    handler: async (args: string, ctx: PiCommandContext) => {
+    handler: async (args: string) => {
       const name = args.trim();
-      if (!name) {
-        await ctx.sendMessage("Usage: /workflow-validate <name>");
-        return;
-      }
-
+      if (!name) { pi.sendUserMessage("Usage: /workflow-validate <name>"); return; }
       const workflow = loadWorkflow(name);
-      if (!workflow) {
-        await ctx.sendMessage(`Workflow "${name}" not found in ~/.pi/workflows/`);
-        return;
-      }
-
+      if (!workflow) { pi.sendUserMessage(`Workflow "${name}" not found.`); return; }
       const errors = validateWorkflow(workflow);
       if (errors.length === 0) {
-        await ctx.sendMessage(
-          `✅ Workflow "${name}" is valid. ${workflow.stages.length} stage(s), ${workflow.stages.reduce((sum, s) => sum + s.dependsOn.length, 0)} dependencies.`
-        );
+        pi.sendUserMessage(`✅ Workflow "${name}" valid. ${workflow.stages.length} stage(s), ${workflow.stages.reduce((sum, s) => sum + s.dependsOn.length, 0)} dependencies.`);
       } else {
-        await ctx.sendMessage(
-          `❌ Validation errors:\n${errors.map((e) => `  - ${e}`).join("\n")}`
-        );
+        pi.sendUserMessage(`❌ Validation errors:\n${errors.map((e) => `  - ${e}`).join("\n")}`);
       }
     },
   });
