@@ -1,0 +1,58 @@
+# MoA (Mixture of Agents) Configuration
+# 
+# Place this file at: ~/.pi/moa/config.yaml
+# Or set MOA_CONFIG_PATH env var to an alternative location.
+#
+# Panelists are called in parallel (or sequentially) with the same question.
+# The synthesizer then aggregates all responses into one final answer.
+
+# ─── Panelists ────────────────────────────────────────────────────────────────
+# Each panelist gets the same question from a different perspective.
+# At least 2 panelists recommended for meaningful diversity.
+
+panelists:
+  - role: reasoning
+    provider: deepseek
+    model: deepseek-v4-pro
+    thinking: xhigh
+
+  - role: engineering
+    provider: google
+    model: gemini-3.1-pro
+    thinking: high
+
+  # Optional third panelist — uncomment to enable
+  # - role: supplementary
+  #   provider: minimax
+  #   model: minimax-m3
+  #   thinking: medium
+
+# ─── Synthesizer ──────────────────────────────────────────────────────────────
+# Reads all panelist responses and produces the final answer.
+# Should be at least as capable as the best panelist.
+
+synthesizer:
+  provider: google
+  model: gemini-3.1-pro
+  thinking: high
+  systemPrompt: |
+    You are a synthesizer. You will receive responses from multiple AI models analyzing the same problem.
+    
+    Your job:
+    1. Identify where models agree and disagree
+    2. Select the best reasoning from each perspective
+    3. Produce a single, coherent final answer
+    4. If models disagree, explain the trade-offs and make a clear recommendation
+
+# ─── Strategy ─────────────────────────────────────────────────────────────────
+
+strategy:
+  # "parallel" — all panelists run simultaneously (faster)
+  # "sequential" — panelists run one at a time (useful for debugging)
+  mode: parallel
+
+  # Max seconds per panelist before timeout
+  timeout_seconds: 120
+
+  # Max concurrent panelists
+  max_panelists: 3

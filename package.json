@@ -1,0 +1,61 @@
+{
+  "name": "pi-fusion",
+  "version": "0.1.0",
+  "description": "Multi-model MoA fusion and workflow orchestration for Pi coding agent",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./extensions/mmr-moa": {
+      "types": "./dist/extensions/mmr-moa/index.d.ts",
+      "import": "./dist/extensions/mmr-moa/index.js"
+    },
+    "./extensions/mmr-workflow": {
+      "types": "./dist/extensions/mmr-workflow/index.d.ts",
+      "import": "./dist/extensions/mmr-workflow/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "config-examples"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "prepack": "npm run build"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-agent-core": ">=0.70.0",
+    "@earendil-works/pi-coding-agent": ">=0.70.0",
+    "pi-mmr": ">=1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "pi-mmr": {
+      "optional": true
+    }
+  },
+  "keywords": [
+    "pi",
+    "coding-agent",
+    "moa",
+    "mixture-of-agents",
+    "multi-model",
+    "workflow",
+    "orchestration",
+    "fusion"
+  ],
+  "license": "MIT",
+  "author": "zerochc",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/zerochc/pi-fusion"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.3",
+    "typescript": "^6.0.3"
+  }
+}
