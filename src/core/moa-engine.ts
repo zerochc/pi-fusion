@@ -21,6 +21,7 @@ export interface LlmCallFn {
     provider: string;
     model: string;
     thinking: string;
+    tools?: string[];
     systemPrompt: string;
     userMessage: string;
     signal?: AbortSignal;

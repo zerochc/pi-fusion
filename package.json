@@ -34,6 +34,7 @@
   "scripts": {
     "build": "tsc",
     "check": "tsc --noEmit",
+    "test": "npm run build && node --test dist/extensions/mmr-workflow/index.test.js",
     "prepack": "npm run build"
   },
   "peerDependencies": {

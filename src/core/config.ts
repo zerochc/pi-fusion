@@ -24,69 +24,262 @@ export function workflowDir(): string {
 
 // ─── YAML Parser (zero-dependency, hand-rolled for portability) ──────────────
 
-function parseSimpleYaml(content: string): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  let currentKey = "";
-  let currentArray: unknown[] = [];
-  let inArray = false;
+interface Line {
+  raw: string;
+  indent: number;
+  trimmed: string;
+}
 
-  for (const line of content.split("\n")) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) continue;
+function getIndent(line: string): number {
+  let indent = 0;
+  for (const ch of line) {
+    if (ch === " ") indent++;
+    else if (ch === "\t") indent += 2;
+    else break;
+  }
+  return indent;
+}
 
-    // Top-level key: value
-    const kvMatch = trimmed.match(/^(\w[\w-]*)\s*:\s*(.*)$/);
-    if (kvMatch && !trimmed.startsWith(" ") && !trimmed.startsWith("\t")) {
-      if (inArray) {
-        if (currentKey) result[currentKey] = currentArray;
-        inArray = false;
-        currentArray = [];
-      }
-      const [, key, value] = kvMatch;
-      const trimmedVal = value.trim().replace(/^["']|["']$/g, "");
-      if (trimmedVal === "") {
-        currentKey = key;
-        inArray = true;
-        currentArray = [];
-      } else if (!isNaN(Number(trimmedVal))) {
-        result[key] = Number(trimmedVal);
-      } else if (trimmedVal === "true" || trimmedVal === "false") {
-        result[key] = trimmedVal === "true";
-      } else {
-        result[key] = trimmedVal;
-      }
+function splitLines(content: string): Line[] {
+  return content.split("\n").map((raw) => ({
+    raw,
+    indent: getIndent(raw),
+    trimmed: raw.trim(),
+  }));
+}
+
+function parseScalar(value: string): unknown {
+  const trimmed = value.trim();
+  const wasQuoted = /^["'].+["']$/.test(trimmed);
+  const unquoted = trimmed.replace(/^["']|["']$/g, "");
+  if (unquoted === "") return "";
+  if (!wasQuoted) {
+    if (!isNaN(Number(unquoted))) return Number(unquoted);
+    if (unquoted === "true" || unquoted === "false") return unquoted === "true";
+  }
+  return unquoted;
+}
+
+function parseInlineArray(value: string): string[] | undefined {
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("[") || !trimmed.endsWith("]")) return undefined;
+  const inner = trimmed.slice(1, -1).trim();
+  if (inner === "") return [];
+  return inner.split(",").map((s) => s.trim().replace(/^["']|["']$/g, ""));
+}
+
+function isCommentOrBlank(line: Line): boolean {
+  return !line.trimmed || line.trimmed.startsWith("#");
+}
+
+/**
+ * Parse a multi-line scalar value (after `key: |` or `key:` with indented body).
+ * Returns the scalar and the index of the first line after the value.
+ */
+function parseMultilineScalar(lines: Line[], start: number, baseIndent: number): { value: string; nextIndex: number } {
+  const parts: string[] = [];
+  let i = start;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (isCommentOrBlank(line)) {
+      i++;
+      continue;
+    }
+    if (line.indent <= baseIndent && line.trimmed) break;
+    if (line.raw.length > line.indent) {
+      parts.push(line.raw.slice(line.indent));
+    } else {
+      parts.push("");
+    }
+    i++;
+  }
+  return { value: parts.join("\n").trim(), nextIndex: i };
+}
+
+/**
+ * Parse an object body starting at `start` with items indented relative to `baseIndent`.
+ * Returns the object and the index of the first line after the object.
+ */
+function parseObject(lines: Line[], start: number, baseIndent: number): { obj: Record<string, unknown>; nextIndex: number } {
+  const obj: Record<string, unknown> = {};
+  let i = start;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (isCommentOrBlank(line)) {
+      i++;
+      continue;
+    }
+    if (line.indent <= baseIndent && line.trimmed) break;
+
+    const kvMatch = line.trimmed.match(/^(\w[\w-]*)\s*:\s*(.*)$/);
+    if (!kvMatch) {
+      i++;
       continue;
     }
 
-    // Array item: - value or - key: value
-    if (inArray) {
-      const itemMatch = trimmed.match(/^-\s+(.*)$/);
-      const nestedMatch = trimmed.match(/^\s{2}(\w[\w-]*)\s*:\s*(.*)$/);
+    const [, key, rawValue] = kvMatch;
+    const value = rawValue.trim();
+    i++;
 
-      if (itemMatch && !trimmed.startsWith("  ")) {
-        currentArray.push(itemMatch[1].trim().replace(/^["']|["']$/g, ""));
-      } else if (nestedMatch) {
-        // If current item is an object, handle nested fields
-        const [, nkey, nval] = nestedMatch;
-        const nv = nval.trim().replace(/^["']|["']$/g, "");
-        const lastIdx = currentArray.length - 1;
-        if (lastIdx >= 0 && typeof currentArray[lastIdx] === "object") {
-          (currentArray[lastIdx] as Record<string, unknown>)[nkey] = isNaN(Number(nv)) ? nv : Number(nv);
-        } else if (currentKey === "panelists") {
-          // Start new panelist object
-          const obj: Record<string, unknown> = {};
-          if (!isNaN(Number(nv))) {
-            (obj as any)[nkey === "thinkingBudget" ? "thinkingBudget" : nkey] = Number(nv);
-          } else {
-            (obj as any)[nkey] = nv;
-          }
-          currentArray.push(obj);
-        }
+    if (value === "" || value === "|" || value === ">") {
+      const { value: multiValue, nextIndex } = parseMultilineScalar(lines, i, line.indent);
+      obj[key] = multiValue;
+      i = nextIndex;
+    } else {
+      const inlineArray = parseInlineArray(value);
+      if (inlineArray !== undefined) {
+        obj[key] = inlineArray;
+      } else {
+        obj[key] = parseScalar(value);
       }
     }
   }
 
-  if (inArray && currentKey) result[currentKey] = currentArray;
+  return { obj, nextIndex: i };
+}
+
+/**
+ * Parse an array body starting at `start`.
+ * Items begin with `- ` at the same indentation level as the first item.
+ * Returns the array and the index of the first line after the array.
+ */
+function parseArray(lines: Line[], start: number): { array: unknown[]; nextIndex: number } {
+  const array: unknown[] = [];
+  const baseIndent = lines[start].indent;
+  let i = start;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (isCommentOrBlank(line)) {
+      i++;
+      continue;
+    }
+    if (line.indent !== baseIndent || !line.trimmed.startsWith("- ")) break;
+
+    const itemContent = line.trimmed.slice(2).trim();
+    i++;
+
+    if (itemContent.includes(":")) {
+      // Object item: `- key: value` followed by indented fields.
+      const kvMatch = itemContent.match(/^(\w[\w-]*)\s*:\s*(.*)$/);
+      const obj: Record<string, unknown> = {};
+      if (kvMatch) {
+        const [, key, rawValue] = kvMatch;
+        const value = rawValue.trim();
+        if (value === "" || value === "|" || value === ">") {
+          const { value: multiValue, nextIndex } = parseMultilineScalar(lines, i, line.indent + 2);
+          obj[key] = multiValue;
+          i = nextIndex;
+        } else {
+          const inlineArray = parseInlineArray(value);
+          obj[key] = inlineArray !== undefined ? inlineArray : parseScalar(value);
+        }
+      }
+
+      // Parse any additional indented fields belonging to this object.
+      while (i < lines.length) {
+        const nested = lines[i];
+        if (isCommentOrBlank(nested)) {
+          i++;
+          continue;
+        }
+        if (nested.indent <= baseIndent) break;
+        if (nested.indent === baseIndent && nested.trimmed.startsWith("- ")) break;
+
+        const nestedKv = nested.trimmed.match(/^(\w[\w-]*)\s*:\s*(.*)$/);
+        if (!nestedKv) {
+          i++;
+          continue;
+        }
+
+        const [, nkey, nrawValue] = nestedKv;
+        const nvalue = nrawValue.trim();
+        i++;
+
+        if (nvalue === "" || nvalue === "|" || nvalue === ">") {
+          if (i < lines.length && lines[i].trimmed.startsWith("- ")) {
+            const { array: nestedArray, nextIndex } = parseArray(lines, i);
+            obj[nkey] = nestedArray;
+            i = nextIndex;
+          } else if (i < lines.length && /^\w[\w-]*\s*:/.test(lines[i].trimmed)) {
+            const { obj: nestedObj, nextIndex } = parseObject(lines, i, nested.indent);
+            obj[nkey] = nestedObj;
+            i = nextIndex;
+          } else {
+            const { value: multiValue, nextIndex } = parseMultilineScalar(lines, i, nested.indent);
+            obj[nkey] = multiValue;
+            i = nextIndex;
+          }
+        } else {
+          const inlineArray = parseInlineArray(nvalue);
+          obj[nkey] = inlineArray !== undefined ? inlineArray : parseScalar(nvalue);
+        }
+      }
+
+      array.push(obj);
+    } else {
+      // Scalar item: `- value`
+      array.push(parseScalar(itemContent));
+    }
+  }
+
+  return { array, nextIndex: i };
+}
+
+function parseSimpleYaml(content: string): Record<string, unknown> {
+  const lines = splitLines(content);
+  const result: Record<string, unknown> = {};
+  let i = 0;
+
+  while (i < lines.length) {
+    const line = lines[i];
+    if (isCommentOrBlank(line)) {
+      i++;
+      continue;
+    }
+
+    // Only top-level keys are parsed here; everything else belongs to the value.
+    if (line.indent > 0) {
+      i++;
+      continue;
+    }
+
+    const kvMatch = line.trimmed.match(/^(\w[\w-]*)\s*:\s*(.*)$/);
+    if (!kvMatch) {
+      i++;
+      continue;
+    }
+
+    const [, key, rawValue] = kvMatch;
+    const value = rawValue.trim();
+    i++;
+
+    if (value === "" || value === "|" || value === ">") {
+      // Peek ahead to decide between an array, a nested object, or a multi-line scalar.
+      if (i < lines.length && lines[i].trimmed.startsWith("- ")) {
+        const { array, nextIndex } = parseArray(lines, i);
+        result[key] = array;
+        i = nextIndex;
+      } else if (i < lines.length && /^\w[\w-]*\s*:/.test(lines[i].trimmed)) {
+        const { obj, nextIndex } = parseObject(lines, i, line.indent);
+        result[key] = obj;
+        i = nextIndex;
+      } else {
+        const { value: multiValue, nextIndex } = parseMultilineScalar(lines, i, line.indent);
+        result[key] = multiValue;
+        i = nextIndex;
+      }
+    } else {
+      const inlineArray = parseInlineArray(value);
+      if (inlineArray !== undefined) {
+        result[key] = inlineArray;
+      } else {
+        result[key] = parseScalar(value);
+      }
+    }
+  }
+
   return result;
 }
 
@@ -187,10 +380,10 @@ export function listWorkflows(): { name: string; description: string }[] {
       const filePath = path.join(dir, f);
       try {
         const content = fs.readFileSync(filePath, "utf-8");
-        const fm = parseFrontmatter(content);
+        const wf = parseWorkflowMarkdown(name, content);
         return {
           name,
-          description: String(fm.description || "(no description)"),
+          description: String(wf.description || "(no description)"),
         };
       } catch {
         return { name, description: "(parse error)" };
@@ -205,12 +398,13 @@ function parseFrontmatter(content: string): Record<string, unknown> {
 }
 
 function parseWorkflowMarkdown(name: string, content: string): WorkflowDefinition {
-  const fm = parseFrontmatter(content);
+  // Workflow files may use either standard frontmatter delimiters (`---` ... `---`)
+  // or a single opening `---` followed by YAML content. Strip the leading delimiter
+  // and parse everything as YAML; parseSimpleYaml ignores non-YAML body lines.
+  const yamlContent = content.startsWith("---\n") ? content.slice(4) : content;
+  const raw = parseSimpleYaml(yamlContent) as Record<string, unknown>;
 
-  // Parse stages from the YAML frontmatter + markdown body
-  const raw = parseSimpleYaml(content.split("---").slice(1).join("---")) as Record<string, unknown>;
-
-  const stages: WorkflowStage[] = (fm.stages as Array<Record<string, unknown>> || []).map((s: Record<string, unknown>) => ({
+  const stages: WorkflowStage[] = (raw.stages as Array<Record<string, unknown>> || []).map((s: Record<string, unknown>) => ({
     id: String(s.id || ""),
     provider: String(s.provider || ""),
     model: String(s.model || ""),
@@ -222,8 +416,8 @@ function parseWorkflowMarkdown(name: string, content: string): WorkflowDefinitio
 
   return {
     name,
-    description: String(fm.description || ""),
-    version: String(fm.version || "1.0"),
+    description: String(raw.description || ""),
+    version: String(raw.version || "1.0"),
     stages,
   };
 }

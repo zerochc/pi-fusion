@@ -95,14 +95,19 @@ export async function runWorkflow(
     // Stages within the same level can run in parallel
     const levelResults = await Promise.allSettled(
       level.map((stage) =>
-        executeStage(stage, { requirement: input, previousResults }, llmCall, signal)
+        executeStage(
+          stage,
+          { requirement: input, previousResults },
+          llmCall,
+          signal,
+          () => onStageStart?.(stage.id)
+        )
       )
     );
 
     for (let i = 0; i < level.length; i++) {
       const stage = level[i];
       const result = levelResults[i];
-      onStageStart?.(stage.id);
 
       let stageResult: StageResult;
 
@@ -140,9 +145,11 @@ async function executeStage(
   stage: WorkflowStage,
   context: StageContext,
   llmCall: LlmCallFn,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  onStart?: () => void
 ): Promise<StageResult> {
   const startTime = Date.now();
+  onStart?.();
   const prompt = buildStagePrompt(stage, context);
 
   try {
@@ -150,6 +157,7 @@ async function executeStage(
       provider: stage.provider,
       model: stage.model,
       thinking: stage.thinking,
+      tools: stage.tools,
       systemPrompt: `You are executing the "${stage.id}" stage of a workflow. Complete your task precisely.`,
       userMessage: prompt,
       signal,
